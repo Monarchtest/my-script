@@ -1,9 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Бесконечный таймер цветов</title>
+    <title>Бесконечный таймер цветов (контроль повторов)</title>
     <style>
         body, html {
             margin: 0;
@@ -21,28 +21,62 @@
         #setup-ui {
             text-align: center;
             background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            padding: 25px 30px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
             z-index: 10;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .field {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .field label {
+            font-size: 16px;
+            font-weight: 500;
         }
 
         input {
             padding: 10px;
             font-size: 18px;
-            width: 80px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            width: 90px;
+            border: 1px solid #aaa;
+            border-radius: 8px;
+            text-align: center;
         }
 
         button.start-btn {
-            padding: 10px 20px;
-            font-size: 18px;
+            padding: 12px 30px;
+            font-size: 20px;
+            font-weight: bold;
             cursor: pointer;
             background-color: #27ae60;
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 40px;
+            box-shadow: 0 4px 0 #1e7e4a;
+            transition: 0.1s ease;
+        }
+
+        button.start-btn:hover {
+            background-color: #2ecc71;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 0 #1e7e4a;
+        }
+
+        button.start-btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #1e7e4a;
         }
 
         /* Полноэкранный слой */
@@ -63,6 +97,7 @@
             font-weight: bold;
             color: black;
             user-select: none;
+            text-shadow: 2px 2px 8px rgba(255,255,255,0.5);
         }
 
         /* Кнопка Стоп в углу */
@@ -70,82 +105,190 @@
             position: absolute;
             top: 20px;
             right: 20px;
-            padding: 10px 15px;
-            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.6);
             color: white;
             border: 2px solid white;
-            border-radius: 5px;
+            border-radius: 40px;
             cursor: pointer;
-            font-size: 14px;
-            z-index: 101; /* Поверх всего */
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 101;
+            backdrop-filter: blur(4px);
+            transition: 0.2s;
         }
 
         #stop-btn:hover {
-            background: rgba(255, 0, 0, 0.7);
+            background: rgba(220, 20, 60, 0.9);
+            transform: scale(1.05);
         }
     </style>
 </head>
 <body>
 
     <div id="setup-ui">
-        <input type="number" id="seconds-input" placeholder="Сек" min="1" value="5">
-        <button class="start-btn" onclick="startInfiniteCycle()">Старт!</button>
+        <h2>⚙️ Настройки таймера</h2>
+        <div class="input-group">
+            <div class="field">
+                <label>⏱️ Секунд на цвет:</label>
+                <input type="number" id="seconds-input" min="1" value="5">
+            </div>
+            <div class="field">
+                <label>🔁 Макс. повторов цвета:</label>
+                <input type="number" id="repeat-limit-input" min="1" value="2" title="Сколько раз подряд может появиться один и тот же цвет">
+            </div>
+        </div>
+        <button class="start-btn" onclick="startInfiniteCycle()">▶ Старт!</button>
     </div>
 
     <div id="overlay">
-        <button id="stop-btn" onclick="stopEverything()">СТОП</button>
+        <button id="stop-btn" onclick="stopEverything()">⏹ СТОП</button>
         <div id="countdown-text">0</div>
     </div>
 
     <script>
-        const colors = ['red', 'blue', 'green', 'yellow'];
-        const overlay = document.getElementById('overlay');
-        const countdownText = document.getElementById('countdown-text');
-        const input = document.getElementById('seconds-input');
-        
-        let timerInterval;
-        let globalSeconds = 0;
-
-        function startInfiniteCycle() {
-            globalSeconds = parseInt(input.value);
+        (function() {
+            const colors = ['red', 'blue', 'green', 'yellow'];
+            const overlay = document.getElementById('overlay');
+            const countdownText = document.getElementById('countdown-text');
+            const secondsInput = document.getElementById('seconds-input');
+            const repeatLimitInput = document.getElementById('repeat-limit-input');
             
-            if (isNaN(globalSeconds) || globalSeconds <= 0) {
-                alert("Введите количество секунд");
-                return;
+            let timerInterval;
+            let globalSeconds = 5;          // базовые секунды
+            let maxConsecutive = 2;           // лимит повторов (по умолчанию)
+            
+            // Состояние для отслеживания повторов
+            let lastColor = null;              // предыдущий цвет (строка)
+            let consecutiveCount = 0;           // сколько раз подряд он встретился
+
+            // Функция выбора цвета с учётом лимита повторений
+            function pickColorAvoidingRepeat() {
+                // Если лимит не задан или меньше 1, то просто случайный (без ограничений)
+                const limit = (maxConsecutive >= 1) ? maxConsecutive : 1;
+                
+                // Если последний цвет не задан (первый запуск) — просто случайный
+                if (lastColor === null) {
+                    const randomIndex = Math.floor(Math.random() * colors.length);
+                    lastColor = colors[randomIndex];
+                    consecutiveCount = 1;
+                    return lastColor;
+                }
+
+                // Проверяем, достигли ли мы лимита для текущего цвета
+                if (consecutiveCount >= limit) {
+                    // Достигли лимита — нужно выбрать другой цвет (исключаем lastColor)
+                    const otherColors = colors.filter(c => c !== lastColor);
+                    // otherColors не может быть пустым, т.к. colors.length > 1 (минимум 4)
+                    const newColor = otherColors[Math.floor(Math.random() * otherColors.length)];
+                    
+                    // Сбрасываем счётчик для нового цвета
+                    lastColor = newColor;
+                    consecutiveCount = 1;
+                    return newColor;
+                } else {
+                    // Лимит ещё не исчерпан, можно с некоторой вероятностью оставить текущий цвет
+                    // Но чтобы было действительно "максимальное количество идущих подряд", 
+                    // мы должны разрешить остаться на том же цвете, но не превысить лимит.
+                    // Случайность: либо остаёмся, либо меняем. При этом нужно следить за лимитом.
+                    
+                    // Решение: генерируем случайный цвет из ВСЕХ, но если выпал тот же самый, проверяем лимит.
+                    // Если выпал тот же и лимит позволяет — берём его. Если лимит будет превышен — пробуем снова.
+                    // Упростим: будем выбирать случайный цвет, но если выбран тот же самый и лимит будет превышен (consecutiveCount+1 > limit),
+                    // то отбрасываем его и выбираем любой другой.
+                    
+                    let attempts = 0;
+                    const maxAttempts = 20; // защита от бесконечного цикла
+                    while (attempts < maxAttempts) {
+                        const candidate = colors[Math.floor(Math.random() * colors.length)];
+                        
+                        if (candidate === lastColor) {
+                            // Если кандидат совпадает с предыдущим
+                            if (consecutiveCount + 1 <= limit) {
+                                // Можно использовать, лимит не будет превышен
+                                lastColor = candidate;
+                                consecutiveCount++;
+                                return candidate;
+                            } else {
+                                // Нельзя, пробуем другой цвет
+                                attempts++;
+                                continue;
+                            }
+                        } else {
+                            // Новый цвет
+                            lastColor = candidate;
+                            consecutiveCount = 1;
+                            return candidate;
+                        }
+                    }
+                    
+                    // Если по какой-то причине зациклились (например, лимит 1 и всегда выпадает тот же),
+                    // принудительно берём другой цвет
+                    const forcedColor = colors.find(c => c !== lastColor) || colors[0];
+                    lastColor = forcedColor;
+                    consecutiveCount = 1;
+                    return forcedColor;
+                }
             }
 
-            overlay.style.display = 'flex';
-            runNextCycle();
-        }
+            function startInfiniteCycle() {
+                // Считываем значения из полей
+                const secVal = parseInt(secondsInput.value);
+                const repeatVal = parseInt(repeatLimitInput.value);
 
-        function runNextCycle() {
-            // Очищаем старый интервал если он был
-            clearInterval(timerInterval);
-
-            // Выбираем случайный цвет (может повториться)
-            const randomColor = colors[Math.floor(Math.random() * colors.length)];
-            overlay.style.backgroundColor = randomColor;
-
-            let timeLeft = globalSeconds;
-            countdownText.innerText = timeLeft;
-
-            timerInterval = setInterval(() => {
-                timeLeft--;
-                
-                if (timeLeft <= 0) {
-                    // Вместо закрытия — запускаем новый цикл
-                    runNextCycle();
-                } else {
-                    countdownText.innerText = timeLeft;
+                if (isNaN(secVal) || secVal <= 0) {
+                    alert("Введите корректное количество секунд (целое положительное число).");
+                    return;
                 }
-            }, 1000);
-        }
+                if (isNaN(repeatVal) || repeatVal < 1) {
+                    alert("Максимальное количество повторов должно быть не меньше 1.");
+                    return;
+                }
 
-        function stopEverything() {
-            clearInterval(timerInterval);
-            overlay.style.display = 'none';
-        }
+                globalSeconds = secVal;
+                maxConsecutive = repeatVal;
+
+                // Сброс состояния при каждом новом старте (обнуляем историю цветов)
+                lastColor = null;
+                consecutiveCount = 0;
+
+                overlay.style.display = 'flex';
+                runNextCycle();
+            }
+
+            function runNextCycle() {
+                // Очищаем предыдущий интервал
+                clearInterval(timerInterval);
+
+                // Получаем цвет с учётом логики повторов
+                const nextColor = pickColorAvoidingRepeat();
+                overlay.style.backgroundColor = nextColor;
+
+                let timeLeft = globalSeconds;
+                countdownText.innerText = timeLeft;
+
+                timerInterval = setInterval(() => {
+                    timeLeft--;
+                    
+                    if (timeLeft <= 0) {
+                        // Завершился цикл — запускаем новый (с новым цветом)
+                        runNextCycle();
+                    } else {
+                        countdownText.innerText = timeLeft;
+                    }
+                }, 1000);
+            }
+
+            function stopEverything() {
+                clearInterval(timerInterval);
+                overlay.style.display = 'none';
+                // Не сбрасываем lastColor и consecutiveCount, но это не важно, т.к. после старта они переинициализируются
+            }
+
+            // Делаем функции глобальными (для onclick)
+            window.startInfiniteCycle = startInfiniteCycle;
+            window.stopEverything = stopEverything;
+        })();
     </script>
 </body>
 </html>
-
